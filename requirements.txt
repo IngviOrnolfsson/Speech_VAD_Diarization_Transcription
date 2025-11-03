@@ -1,0 +1,11 @@
+numpy==1.25.0
+pandas==2.2.0
+scipy==1.11.0
+soundfile==0.12.1
+torchaudio==2.2.0
+rVADfast==0.1.7
+whisperx==2.0.0
+torch==2.2.0
+tqdm==4.65.0
+click==8.1.7
+pyyaml==6.0
