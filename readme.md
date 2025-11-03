@@ -1,6 +1,6 @@
 # Conversational Speech Labeler Pipeline
 
-**conversational_speech_labeler** is a Python package for automated processing of dyadic conversation recordings. The pipeline includes:  
+**Conversational_speech_labeler** is a Python package for automated processing of dyadic conversation recordings. The pipeline includes:  
 
 - Voice activity detection (VAD)  
 - Segment filtering (short segments & low-energy filtering)  
