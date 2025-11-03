@@ -1,0 +1,23 @@
+name: wp1
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.10
+  - pytorch=2.4.0
+  - pytorch-cuda=12.1
+  - torchaudio=2.4.0
+  - ffmpeg
+  - jupyter
+  - pip
+  - pip:
+    - transformers>=4.48
+    - tokenizers>=0.21
+    - accelerate
+    - rVADfast
+    - soundfile
+    - pandas
+    - scipy
+    - tqdm

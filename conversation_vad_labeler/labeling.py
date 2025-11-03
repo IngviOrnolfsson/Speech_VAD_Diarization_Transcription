@@ -1,35 +1,141 @@
-import numpy as np, pandas as pd
+import numpy as np
+import pandas as pd
 from collections import Counter
 from scipy.stats import entropy
 
-def compute_entropy(text, by='word'):
-    text = str(text).strip(); 
-    if not text: return 0.0
-    tokens = text.split() if by=='word' else list(text)
-    if len(tokens)<=1: return 0.0
-    counter = Counter(tokens); probs = np.array([v/len(tokens) for v in counter.values()])
+def compute_entropy(text: str, by: str = 'word') -> float:
+    """
+    Compute the entropy of a text string.
+
+    Entropy measures the diversity of tokens in the text.
+
+    Args:
+        text: The input text string.
+        by: Tokenization method, 'word' or 'char'.
+
+    Returns:
+        Entropy value in bits, or 0.0 for empty or single-token text.
+    """
+    text = str(text).strip()
+    if not text:
+        return 0.0
+
+    tokens = text.split() if by == 'word' else list(text)
+    if len(tokens) <= 1:
+        return 0.0
+
+    counter = Counter(tokens)
+    probs = np.array([v / len(tokens) for v in counter.values()])
     return entropy(probs, base=2)
 
-def classify_transcriptions(df, threshold=1.5):
-    df = df.copy(); df['entropy']=df['transcription'].apply(lambda x: compute_entropy(x,'word'))
-    df['type']=df['entropy'].apply(lambda x: 'backchannel' if x<threshold else 'turn'); return df
+def classify_transcriptions(df: pd.DataFrame, threshold: float = 1.5) -> pd.DataFrame:
+    """
+    Classify transcriptions as 'backchannel' or 'turn' based on entropy.
 
-def merge_turns_with_context(df, max_backchannel_dur=1.0, max_gap_sec=2.0):
-    df = df.sort_values('start_sec').reset_index(drop=True); merged=[]; i=0
-    while i<len(df):
+    Low entropy indicates repetitive/short responses (backchannels),
+    high entropy indicates more diverse content (turns).
+
+    Args:
+        df: DataFrame with 'transcription' column.
+        threshold: Entropy threshold for classification.
+
+    Returns:
+        DataFrame with added 'entropy' and 'type' columns.
+    """
+    df = df.copy()
+    df['entropy'] = df['transcription'].apply(lambda x: compute_entropy(x, 'word'))
+    df['type'] = df['entropy'].apply(lambda x: 'backchannel' if x < threshold else 'turn')
+    return df
+
+def merge_turns_with_context(
+    df: pd.DataFrame,
+    max_backchannel_dur: float = 1.0,
+    max_gap_sec: float = 2.0
+) -> pd.DataFrame:
+    """
+    Merge same-speaker turns separated only by short backchannels.
+
+    Simple post-processing step after windowed turn merging and transcription.
+    Merges turns that are separated by backchannels (from any speaker) that are
+    short enough, without re-applying duration/gap rules from windowed merging.
+
+    Works with any number of speakers.
+
+    Args:
+        df: DataFrame with 'start_sec', 'end_sec', 'speaker', 'type', 'transcription' columns.
+            'type' should be 'backchannel' or 'turn' (from classify_transcriptions).
+        max_backchannel_dur: Maximum duration (seconds) for backchannels to allow merging across.
+        max_gap_sec: Maximum time gap (seconds) between turns to consider merging.
+
+    Returns:
+        DataFrame with merged turns. Backchannels are preserved as separate entries.
+    """
+    if df.empty:
+        return pd.DataFrame(columns=['speaker', 'start_sec', 'end_sec', 'transcription', 'type'])
+
+    df = df.sort_values('start_sec').reset_index(drop=True)
+    merged = []
+    i = 0
+
+    while i < len(df):
         current = df.iloc[i].copy()
-        if current['type']=='backchannel': merged.append(current); i+=1; continue
-        speaker = current['speaker']; merged_turn = current.copy(); merged_flag=False; j=i+1
-        while j<len(df):
-            next_turn = df.iloc[j]
-            if next_turn['speaker']!=speaker or next_turn['type']!='turn': break
-            gap = next_turn['start_sec']-merged_turn['end_sec']
-            if gap>max_gap_sec: break
-            between = df[(df['start_sec']<next_turn['start_sec']) & (df['end_sec']>merged_turn['end_sec'])]
-            if len(between)==0 or all((between['speaker']==('P1' if speaker=='P2' else 'P2')) & (between['type']=='backchannel') & ((between['end_sec']-between['start_sec'])<=max_backchannel_dur)):
-                merged_turn['end_sec']=next_turn['end_sec']
-                merged_turn['transcription']=merged_turn['transcription'].strip()+" "+next_turn['transcription'].strip()
-                merged_flag=True; j+=1
-            else: break
-        merged.append(merged_turn); i = j if merged_flag else i+1
+
+        # Backchannels are never merged, just kept as-is
+        if current['type'] == 'backchannel':
+            merged.append(current)
+            i += 1
+            continue
+
+        # Current is a turn - look for same-speaker turns to merge with
+        speaker = current['speaker']
+        j = i + 1
+
+        # Look ahead for same-speaker turns
+        while j < len(df):
+            next_segment = df.iloc[j]
+
+            # Only interested in turns from the same speaker
+            if next_segment['type'] != 'turn' or next_segment['speaker'] != speaker:
+                j += 1
+                continue
+
+            # Check gap
+            gap = next_segment['start_sec'] - current['end_sec']
+            if gap > max_gap_sec:
+                break  # Gap too large, stop looking
+
+            # Check what's between current and next_segment
+            between = df[
+                (df.index > i) &
+                (df.index < j) &
+                (df['start_sec'] >= current['end_sec']) &
+                (df['end_sec'] <= next_segment['start_sec'])
+            ]
+
+            # Can merge if:
+            # 1. Nothing in between, OR
+            # 2. Only short backchannels in between (from any speaker)
+            can_merge = (
+                len(between) == 0 or
+                all(
+                    (between['type'] == 'backchannel') &
+                    ((between['end_sec'] - between['start_sec']) <= max_backchannel_dur)
+                )
+            )
+
+            if can_merge:
+                # Merge next_segment into current
+                current['end_sec'] = next_segment['end_sec']
+                current['transcription'] = (
+                    current['transcription'].strip() + " " + 
+                    next_segment['transcription'].strip()
+                )
+                j += 1
+            else:
+                # Can't merge, stop looking
+                break
+
+        merged.append(current)
+        i = j
+
     return pd.DataFrame(merged).reset_index(drop=True)
