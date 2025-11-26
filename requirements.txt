@@ -42,6 +42,9 @@ ruamel.yaml>=0.18.0
 tqdm>=4.65.0
 rich>=14.0.0
 
+# Environment Configuration
+python-dotenv>=1.0.0
+
 # Jupyter & Development (optional)
 jupyter>=1.0.0
 jupyterlab>=4.0.0
@@ -52,3 +55,10 @@ black>=23.0.0
 flake8>=6.0.0
 isort>=5.12.0
 mypy>=1.7.0
+
+# Carbon tracking / emissions estimation (optional)
+# Add one of the following depending on preferred tool:
+#  - codecarbon: actively maintained, integrates with third-party trackers
+#  - carbontracker: lightweight tracker (older API)
+codecarbon>=2.2.0
+carbontracker>=1.5.0

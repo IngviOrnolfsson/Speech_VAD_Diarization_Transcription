@@ -44,6 +44,7 @@ outputs/
 interim/
 pretrained_models/
 natural-turn-transcription/
+logs/
 speech_separation.ipynb
 speech_separation_chunked.py
 run_separation_and_pipeline.py
@@ -52,3 +53,8 @@ run_pipeline_only.py
 # OS
 .DS_Store
 Thumbs.db
+protocol_revised.tex
+
+# Environment variables (API keys)
+.env
+.env.*

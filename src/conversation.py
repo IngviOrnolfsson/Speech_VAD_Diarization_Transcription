@@ -55,7 +55,7 @@ def process_conversation(
     entropy_threshold: float = 1.5,
     max_backchannel_dur: float = 1.0,
     max_gap_sec: float = 3.0,
-    batch_size: float | None = 60.0,
+    batch_size: float | None = 30.0,
     interactive_energy_filter: bool = False,
     skip_vad_if_exists: bool = True,
     skip_transcription_if_exists: bool = True,
@@ -64,7 +64,8 @@ def process_conversation(
     Run the complete VAD→transcription→labeling pipeline for a conversation.
 
     Args:
-        speakers_audio: Mapping of speaker names to audio file paths, or single path for diarization.
+        speakers_audio: Mapping of speaker names to audio file paths,
+            or single path for diarization.
         output_dir: Directory to save output files.
         vad_type: Type of VAD to use ('silero', 'rvad', 'whisper', 'pyannote').
         auth_token: HuggingFace auth token (required for pyannote).
@@ -88,9 +89,12 @@ def process_conversation(
         max_backchannel_dur: Maximum duration for backchannel merging.
         max_gap_sec: Maximum gap for merging with context.
         batch_size: Batch size (in seconds) for processing segments.
-        interactive_energy_filter: If True, interactively adjust energy threshold.
-        skip_vad_if_exists: Whether to skip VAD/diarization if existing output files are found.
-        skip_transcription_if_exists: If True, skip transcription and classification if classified_transcriptions.txt exists.
+        interactive_energy_filter: If True, interactively adjust energy
+            threshold.
+        skip_vad_if_exists: Whether to skip VAD/diarization if existing
+            output files are found.
+        skip_transcription_if_exists: If True, skip transcription and
+            classification if classified_transcriptions.txt exists.
 
     Returns:
         Dictionary with paths to output files and processed DataFrames.
@@ -120,7 +124,8 @@ def process_conversation(
             speaker_dirs_found = [
                 d
                 for d in os.listdir(output_dir)
-                if os.path.isdir(os.path.join(output_dir, d)) and re.match(r"^P\d+$", d)
+                if os.path.isdir(os.path.join(output_dir, d))
+                and re.match(r"^SPEAKER_\d+$", d)
             ]
             vad_paths = {}
             speakers = []

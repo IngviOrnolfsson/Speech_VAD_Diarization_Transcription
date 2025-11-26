@@ -2,6 +2,43 @@
 requires = ["setuptools", "wheel"]
 build-backend = "setuptools.build_meta"
 
+[project]
+name = "speech-vad-diarization-transcription"
+version = "0.1.0"
+description = "WP1: Conversational Speech Processing Pipeline"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+  "pyannote.audio>=4.0.0",
+  "speechbrain>=1.0.0",
+  "transformers>=4.48.0",
+  "tokenizers>=0.21.0",
+  "soundfile>=0.12.0",
+  "torch==2.8.0",
+  "torchaudio==2.8.0",
+  "rvadfast>=0.0.5",
+  "asteroid-filterbanks>=0.4.0",
+  "torch-audiomentations>=0.12.0",
+  "numpy>=1.25.0",
+  "scipy>=1.11.0",
+  "pandas>=2.2.0",
+  "datasets>=4.0.0",
+  "huggingface-hub>=0.36.0",
+  "pyyaml>=6.0",
+  "tqdm>=4.65.0",
+  "rich>=14.0.0",
+  "codecarbon>=2.2.0",
+  "carbontracker>=1.5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "black>=23.0.0",
+  "flake8>=6.0.0",
+  "isort>=5.12.0",
+  "mypy>=1.7.0",
+]
+
 [tool.black]
 line-length = 88
 target-version = ['py310']

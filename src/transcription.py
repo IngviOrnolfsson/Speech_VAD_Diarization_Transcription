@@ -110,6 +110,153 @@ def _save_segment_wav(
         sf.write(out_path, audio_array, samplerate=sr)
 
 
+def _transcribe_single_with_retry(
+    seg_file: str,
+    txt_cache: str,
+    model: TransformersASRModel,
+    generate_kwargs: Dict[str, Any],
+    max_retries: int = 3,
+) -> str:
+    """Transcribe a single file with OOM retry logic.
+
+    Parameters
+    ----------
+    seg_file : str
+        Path to the audio segment file
+    txt_cache : str
+        Path to cache the transcription
+    model : TransformersASRModel
+        The ASR model
+    generate_kwargs : Dict[str, Any]
+        Generation parameters
+    max_retries : int
+        Maximum number of retry attempts with increasing memory clearing
+
+    Returns
+    -------
+    str
+        Transcribed text
+    """
+    pipe = model.pipeline
+    original_device = pipe.model.device
+    original_dtype = pipe.model.dtype
+
+    for attempt in range(max_retries):
+        try:
+            # Aggressive memory and cache clearing before attempt
+            if torch.cuda.is_available():
+                # Force clear CUDA cache
+                torch.cuda.empty_cache()
+                torch.cuda.synchronize()
+                # Reset peak memory stats
+                torch.cuda.reset_peak_memory_stats()
+
+            # CRITICAL: Clear model's past_key_values cache
+            if hasattr(pipe.model, "model") and hasattr(
+                pipe.model.model, "decoder"
+            ):
+                # Force recreation of decoder cache to avoid accumulation
+                pipe.model.model.decoder.past_key_values = None
+
+            # Clear Python garbage
+            gc.collect()
+
+            result = pipe(
+                seg_file,
+                generate_kwargs=generate_kwargs,
+                return_timestamps=True,
+            )
+            text = result.get("text", "").strip()
+
+            # Save to cache
+            with open(txt_cache, "w", encoding="utf-8") as cache_file:
+                cache_file.write(text)
+
+            # Clear memory after success
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+            gc.collect()
+
+            return text
+
+        except (RuntimeError, torch.cuda.OutOfMemoryError) as e:
+            error_msg = str(e).lower()
+            if "out of memory" in error_msg or "cuda" in error_msg:
+                print(
+                    f"\n⚠️  OOM on file {os.path.basename(seg_file)} "
+                    f"(attempt {attempt + 1}/{max_retries})"
+                )
+
+                # Aggressive memory cleanup
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+                    torch.cuda.synchronize()
+                    torch.cuda.ipc_collect()
+                gc.collect()
+
+                if attempt == max_retries - 1:
+                    # Last GPU attempt failed - try CPU as final fallback
+                    print(
+                        "    → All GPU attempts failed. "
+                        "Trying CPU as last resort..."
+                    )
+                    try:
+                        # Move model to CPU and convert to float32 for CPU compatibility
+                        pipe.model.to("cpu", dtype=torch.float32)
+                        pipe.dtype = torch.float32
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                        gc.collect()
+
+                        result = pipe(
+                            seg_file,
+                            generate_kwargs=generate_kwargs,
+                            return_timestamps=True,
+                        )
+                        text = result.get("text", "").strip()
+
+                        # Save to cache
+                        with open(txt_cache, "w", encoding="utf-8") as cache_file:
+                            cache_file.write(text)
+
+                        print("    ✓ Successfully transcribed on CPU")
+
+                        # Move model back to original device and dtype
+                        pipe.model.to(original_device, dtype=original_dtype)
+                        pipe.dtype = original_dtype
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
+                        gc.collect()
+
+                        return text
+
+                    except Exception as cpu_error:
+                        print(f"    ❌ CPU fallback also failed: {cpu_error}")
+                        # Move model back to original device and dtype
+                        try:
+                            pipe.model.to(original_device, dtype=original_dtype)
+                            pipe.dtype = original_dtype
+                        except Exception as restore_error:
+                            print(
+                                f"    ⚠️  Could not restore model to GPU: "
+                                f"{restore_error}"
+                            )
+                        # Save error marker to cache so we know it failed
+                        error_text = f"[TRANSCRIPTION_FAILED: {cpu_error}]"
+                        with open(txt_cache, "w", encoding="utf-8") as cache_file:
+                            cache_file.write(error_text)
+                        return error_text
+                else:
+                    print("    → Retrying with aggressive memory cleanup...")
+                    import time
+
+                    time.sleep(2)  # Brief pause to let GPU stabilize
+            else:
+                raise
+
+    return ""
+
+
 def _transcribe_batch(
     batch_files: List[str],
     batch_caches: List[str],
@@ -182,37 +329,75 @@ def _transcribe_batch(
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
 
-    except (RuntimeError, ValueError) as e:
+    except (RuntimeError, ValueError, torch.cuda.OutOfMemoryError) as e:
         error_msg = str(e).lower()
         if (
             "out of memory" in error_msg
             or "cuda" in error_msg
             or "different keys" in error_msg
         ):
-            # OOM or batching error - process individually with memory management
+            # OOM or batching error - process with recursive splitting strategy
             print(
-                f"\n⚠️  Error with batch ({len(files_to_transcribe)} files, \
-                {total_duration:.1f}s total): {e}"
+                f"\n⚠️  Error with batch ({len(files_to_transcribe)} files, "
+                f"{total_duration:.1f}s total): {type(e).__name__}"
             )
-            print("    → Splitting into individual transcriptions...")
+
+            # Aggressive memory cleanup before splitting
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
+                torch.cuda.synchronize()
             gc.collect()
 
-            for batch_idx, seg_file in zip(file_indices, files_to_transcribe):
-                batch_result = pipe(
-                    seg_file, generate_kwargs=generate_kwargs, return_timestamps=True
+            # If batch has more than 1 file, split in half and retry
+            if len(files_to_transcribe) > 1:
+                print("    → Splitting batch into 2 smaller batches...")
+                mid = len(files_to_transcribe) // 2
+
+                # Process first half
+                # first_half_files = [files_to_transcribe[i] for i in range(mid)]
+                first_half_caches = [batch_caches[file_indices[i]] for i in range(mid)]
+                first_half_indices = [file_indices[i] for i in range(mid)]
+
+                first_results = _transcribe_batch(
+                    [batch_files[idx] for idx in first_half_indices],
+                    first_half_caches,
+                    model,
+                    cache,
                 )
-                text = batch_result.get("text", "").strip()
+                for local_idx, batch_idx in enumerate(first_half_indices):
+                    results[batch_idx] = first_results[local_idx]
+
+                # Process second half
+                # second_half_files = [
+                #     files_to_transcribe[i] for i in range(mid, len(files_to_transcribe))
+                # ]
+                second_half_caches = [
+                    batch_caches[file_indices[i]]
+                    for i in range(mid, len(files_to_transcribe))
+                ]
+                second_half_indices = [
+                    file_indices[i] for i in range(mid, len(files_to_transcribe))
+                ]
+
+                second_results = _transcribe_batch(
+                    [batch_files[idx] for idx in second_half_indices],
+                    second_half_caches,
+                    model,
+                    cache,
+                )
+                for local_idx, batch_idx in enumerate(second_half_indices):
+                    results[batch_idx] = second_results[local_idx]
+            else:
+                # Single file OOM - use retry with aggressive cleanup
+                print("    → Processing single file with retry logic...")
+                batch_idx = file_indices[0]
+                seg_file = files_to_transcribe[0]
+                txt_cache = batch_caches[batch_idx]
+
+                text = _transcribe_single_with_retry(
+                    seg_file, txt_cache, model, generate_kwargs, max_retries=3
+                )
                 results[batch_idx] = text
-
-                cache_path = batch_caches[batch_idx]
-                with open(cache_path, "w", encoding="utf-8") as cache_file:
-                    cache_file.write(text)
-
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-                gc.collect()
         else:
             raise  # Re-raise non-OOM/batching errors
 
@@ -229,7 +414,7 @@ def transcribe_segments(
     file_prefix: Optional[str] = None,
     cache: bool = True,
     min_duration_samples: int = 1600,
-    batch_size: float | None = 240.0,
+    batch_size: float | None = 30.0,
     compress: bool = True,
 ) -> List[Dict[str, Any]]:
     """Run ASR on a set of time-stamped segments extracted from ``audio_path``.

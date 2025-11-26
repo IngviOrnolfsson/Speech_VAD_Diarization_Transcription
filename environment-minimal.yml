@@ -1,7 +1,13 @@
 # Use: mamba env create -f environment-minimal.yml -n <name>
+# Then install Python packages with uv:
+#   uv pip install -r requirements.txt
+# Or for locked versions:
+#   uv pip install -r requirements-lock-uv.txt
 channels:
   - conda-forge
 dependencies:
   - python=3.10
   - ffmpeg=7.*  # torchcodec 0.7.0 (required by pyannote) supports FFmpeg 4-7
   - pip
+  # Note: Most Python packages are installed via uv/pip from requirements.txt
+  # Conda is only used for ffmpeg (requires system libraries) and Python itself

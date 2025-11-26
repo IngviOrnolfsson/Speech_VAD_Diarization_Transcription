@@ -40,6 +40,12 @@ install-uv:
 	. .venv/bin/activate && pip install -e .
 	@echo "✓ Installation complete! Activate with: source .venv/bin/activate"
 
+gen-lock:
+	@echo "Generating requirements-lock-uv.txt from active environment (pip freeze)..."
+	@chmod +x scripts/generate_uv_lock.sh
+	@scripts/generate_uv_lock.sh requirements-lock-uv.txt
+	@echo "✓ Lock file generated: requirements-lock-uv.txt"
+
 install-conda:
 	@echo "Installing with Conda/Mamba..."
 	@if command -v mamba >/dev/null 2>&1; then \
