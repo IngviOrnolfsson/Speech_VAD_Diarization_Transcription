@@ -57,4 +57,3 @@ protocol_revised.tex
 
 # Environment variables (API keys)
 .env
-.env.*
