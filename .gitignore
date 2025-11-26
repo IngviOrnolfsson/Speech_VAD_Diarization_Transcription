@@ -57,3 +57,7 @@ protocol_revised.tex
 
 # Environment variables (API keys)
 .env
+
+# Scripts folder - ignore everything except generate_uv_lock.sh
+scripts/*
+!scripts/generate_uv_lock.sh

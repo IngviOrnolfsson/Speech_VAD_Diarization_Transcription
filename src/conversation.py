@@ -33,6 +33,44 @@ def _normalise_margins(margins: EnergyMargin, speakers: List[str]) -> List[float
     return [float(margins)] * len(speakers)
 
 
+def _export_to_elan_format(df: pd.DataFrame, output_path: str) -> None:
+    """
+    Export DataFrame to ELAN-compatible tab-delimited format.
+
+    ELAN import format: tier \t begin_ms \t end_ms \t annotation
+    Tier names combine speaker and type: P1_turn, P1_backchannel, etc.
+
+    Args:
+        df: DataFrame with speaker, start_sec, end_sec, transcription, type columns
+        output_path: Path to save the ELAN-compatible file
+    """
+    output_data = []
+
+    for _, row in df.iterrows():
+        speaker = row["speaker"]
+        start_ms = int(float(row["start_sec"]) * 1000)
+        end_ms = int(float(row["end_sec"]) * 1000)
+        transcription = str(row.get("transcription", "")).replace("\t", " ")
+        utt_type = row.get("type", "turn")
+
+        # Tier name combines speaker and type
+        tier_name = f"{speaker}_{utt_type}"
+        output_data.append({
+            "tier": tier_name,
+            "begin": start_ms,
+            "end": end_ms,
+            "annotation": transcription,
+        })
+
+    output_df = pd.DataFrame(output_data)
+    output_df.to_csv(output_path, sep="\t", index=False)
+
+    # Report tiers
+    tier_names = sorted(output_df["tier"].unique())
+    print(f"  Created {len(output_data)} annotations across {len(tier_names)} tiers")
+    print(f"  Tiers: {tier_names}")
+
+
 def process_conversation(
     speakers_audio: Mapping[str, str] | str,
     output_dir: str = "outputs",
@@ -59,6 +97,7 @@ def process_conversation(
     interactive_energy_filter: bool = False,
     skip_vad_if_exists: bool = True,
     skip_transcription_if_exists: bool = True,
+    export_elan: bool = True,
 ) -> Dict[str, object]:
     """
     Run the complete VAD→transcription→labeling pipeline for a conversation.
@@ -95,6 +134,8 @@ def process_conversation(
             output files are found.
         skip_transcription_if_exists: If True, skip transcription and
             classification if classified_transcriptions.txt exists.
+        export_elan: If True, export final labels to ELAN-compatible
+            tab-delimited format (default: True).
 
     Returns:
         Dictionary with paths to output files and processed DataFrames.
@@ -313,6 +354,14 @@ def process_conversation(
 
     print(f"✓ Final processing completed: {len(df_merged_context)} total segments")
 
+    # Export to ELAN format if requested
+    elan_export_path = None
+    if export_elan:
+        print("\n7. Exporting to ELAN format...")
+        elan_export_path = os.path.join(output_dir, "final_labels_elan.txt")
+        _export_to_elan_format(df_merged_context, elan_export_path)
+        print(f"✓ ELAN export: {elan_export_path}")
+
     print("\n" + "=" * 60)
     print("✅ Pipeline completed successfully!")
     print("=" * 60)
@@ -322,6 +371,8 @@ def process_conversation(
     print(f"- Raw transcriptions: {raw_transcriptions_path}")
     print(f"- Classified transcriptions: {classified_path}")
     print(f"- Final labels: {final_labels_path}")
+    if elan_export_path:
+        print(f"- ELAN export: {elan_export_path}")
 
     return {
         "output_dir": output_dir,
@@ -330,6 +381,7 @@ def process_conversation(
         "raw_transcriptions": raw_transcriptions_path,
         "classified": classified_path,
         "final_labels": final_labels_path,
+        "elan_export": elan_export_path,
         "turns_df": turns_df,
         "classified_df": df_class,
         "final_df": df_merged_context,

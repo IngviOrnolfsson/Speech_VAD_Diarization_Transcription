@@ -463,7 +463,6 @@ def transcribe_segments(
         start = float(seg["start_sec"])
         end = float(seg["end_sec"])
         row_speaker = seg.get("speaker", speaker)
-        turn_type = seg.get("Turn_Type", "T")  # Preserve Turn_Type if present
         seg_filename = os.path.join(
             output_dir,
             f"{prefix}_seg_{idx}_{start:.2f}_{end:.2f}.wav",
@@ -482,7 +481,6 @@ def transcribe_segments(
                     "speaker": row_speaker,
                     "start_sec": start,
                     "end_sec": end,
-                    "turn_type": turn_type,
                     "transcription": "",
                     "skip": True,
                 }
@@ -499,7 +497,6 @@ def transcribe_segments(
                 "speaker": row_speaker,
                 "start_sec": start,
                 "end_sec": end,
-                "turn_type": turn_type,
                 "seg_filename": seg_filename,
                 "txt_cache": txt_cache,
                 "skip": False,
@@ -572,7 +569,6 @@ def transcribe_segments(
                     "speaker": seg_info["speaker"],
                     "start_sec": seg_info["start_sec"],
                     "end_sec": seg_info["end_sec"],
-                    "turn_type": seg_info.get("turn_type", "T"),
                     "transcription": "",
                 }
             )
@@ -582,7 +578,6 @@ def transcribe_segments(
                     "speaker": seg_info["speaker"],
                     "start_sec": seg_info["start_sec"],
                     "end_sec": seg_info["end_sec"],
-                    "turn_type": seg_info.get("turn_type", "T"),
                     "transcription": transcriptions[seg_info["seg_filename"]],
                 }
             )

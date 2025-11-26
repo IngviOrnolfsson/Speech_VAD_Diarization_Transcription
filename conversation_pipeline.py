@@ -69,9 +69,21 @@ def _triad_example_inputs() -> tuple[dict[str, str], str, str]:
         output_directory,
     )
 
+def _diad_example_inputs() -> tuple[dict[str, str], str, str]:
+    base = Path("examples/recordings")
+    vad_type = "silero"
+    output_directory = "outputs/diad_silero"
+    return (
+        {
+            "P1": str(base / "EXP9_None_p1_trial2.wav"),
+            "P2": str(base / "EXP9_None_p2_trial2.wav"),
+        },
+        vad_type,
+        output_directory,
+    )
 
 def main() -> None:
-    speakers_audio, vad_type, output_directory = _triad_example_inputs()
+    speakers_audio, vad_type, output_directory = _diad_example_inputs()
 
     # HuggingFace token for pyannote - can be set via:
     # 1. HF_TOKEN environment variable (or in .env file)
@@ -112,11 +124,12 @@ def main() -> None:
         vad_type=vad_type,
         auth_token=hf_token,  # Pass HF token for pyannote
         energy_margin_db=20.0,
-        whisper_device="auto",
+        whisper_device="cpu",
         interactive_energy_filter=False,
         batch_size=30.0,  # Total seconds per batch
-        skip_vad_if_exists=True,
-        skip_transcription_if_exists=True,
+        skip_vad_if_exists=False,
+        skip_transcription_if_exists=False,
+        export_elan=True,  # Export ELAN-compatible format by default
     )
     end_time = time.time()
 
