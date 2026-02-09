@@ -92,7 +92,7 @@ def process_conversation(
     whisper_device: str = "auto",
     whisper_language: str = "da",
     whisper_transformers_batch_size: int = 100,
-    entropy_threshold: float = -1, # <0: sets everything to turns, default: 1.5
+    entropy_threshold: float = 1.5,
     max_backchannel_dur: float = 1.0,
     max_gap_sec: float = 3.0,
     batch_size: float | None = 30.0,
