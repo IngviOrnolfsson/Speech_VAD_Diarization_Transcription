@@ -58,7 +58,7 @@ def example_dyad() -> dict:
             "P2": "path/to/speaker2.wav",
         },
         "output_dir": "outputs/dyad",
-        "vad_type": "silero",
+        "vad_type": "rvad",
     }
 
 
@@ -230,9 +230,9 @@ def main() -> None:
     # -------------------------------------------------------------------------
     # SELECT YOUR EXAMPLE HERE
     # -------------------------------------------------------------------------
-    # config = example_dyad()
+    config = example_dyad()
     # config = example_triad()
-    config = example_diarization()
+    # config = example_diarization()
     # config = example_custom_whisper()
     # config = example_cpu_only()
     # config = example_full_options()
