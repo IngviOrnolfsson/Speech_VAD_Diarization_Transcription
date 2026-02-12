@@ -7,7 +7,7 @@ Based on MATLAB implementation compute_turn_errors.m.
 from __future__ import annotations
 
 import warnings
-from typing import Tuple
+from typing import Tuple, cast
 
 import numpy as np
 import pandas as pd
@@ -29,8 +29,8 @@ def compute_overlap_ratio(
         Overlap ratio as overlapping duration / ground truth duration.
     """
     # Ensure segments are sorted [start, end]
-    s1 = tuple(sorted(s1))
-    s2 = tuple(sorted(s2))
+    s1 = cast(Tuple[float, float], tuple(sorted(s1)))
+    s2 = cast(Tuple[float, float], tuple(sorted(s2)))
 
     # Compute overlap ratio as overlapping duration / true duration
     overlapping_duration = min(s1[1], s2[1]) - max(s1[0], s2[0])
@@ -187,7 +187,9 @@ def compute_turn_errors(
         detected_list.append(is_detected)
 
         if is_detected:
-            duration_delta_list.append(float(np.nansum(duration_delta_matrix[:, i_ref])))
+            duration_delta_list.append(
+                float(np.nansum(duration_delta_matrix[:, i_ref]))
+            )
             start_delta_list.append(float(np.nansum(start_delta_matrix[:, i_ref])))
             end_delta_list.append(float(np.nansum(end_delta_matrix[:, i_ref])))
         else:
@@ -214,7 +216,8 @@ def compute_turn_errors(
                     "detected": np.nan,
                     "duration_delta": np.nan,
                     "start_delta": np.nan,
-                    "end_delta": np.nan}
+                    "end_delta": np.nan,
+                }
             )
 
     if false_positives:
@@ -222,6 +225,7 @@ def compute_turn_errors(
         df_out = pd.concat([df_out, df_fp], ignore_index=True)
 
     return df_out
+
 
 def tabulate_floor_transfers(
     df_turns: pd.DataFrame,
@@ -289,11 +293,10 @@ def tabulate_floor_transfers(
     n_fto = len(df_fto)
     expected_fto = n_turns - 1
     if n_fto != expected_fto:
-        raise ValueError(
-            f"Expected {expected_fto} floor transfers, but got {n_fto}."
-        )
+        raise ValueError(f"Expected {expected_fto} floor transfers, but got {n_fto}.")
 
     return df_fto
+
 
 def compute_all_errors(
     df_ref: pd.DataFrame,
@@ -309,9 +312,7 @@ def compute_all_errors(
         min_overlap_ratio: Minimum overlap ratio for matching turns.
 
     Returns:
-        Tuple of (turn_errors_df, fto_errors_df) where:
-            - turn_errors_df: DataFrame with turn errors.
-            - fto_errors_df: DataFrame with floor transfer errors.
+        DataFrame with concatenated turn and floor transfer errors.
     """
     turn_errors_df = compute_turn_errors(df_ref, df_est, min_overlap_ratio)
 
@@ -321,52 +322,7 @@ def compute_all_errors(
 
     err_df = pd.concat([turn_errors_df, fto_errors_df], ignore_index=True)
 
-    # Backchannel error metrics
-    BC_FP = err_df[(err_df["turn_type"] == "B") & (err_df["detected"].isna())]
-    BC_TP = err_df[(err_df["turn_type"] == "B") & (err_df["detected"] == True)]
-    BC_FN = err_df[(err_df["turn_type"] == "B") & (err_df["detected"] == False)]
-    
-    BC_metrics = {
-      "precision": len(BC_TP) / (len(BC_TP) + len(BC_FP)) if (len(BC_TP) + len(BC_FP)) > 0 else 0.0,
-      "recall": len(BC_TP) / (len(BC_TP) + len(BC_FN)) if (len(BC_TP) + len(BC_FN)) > 0 else 0.0,
-      "mean_duration_delta": BC_TP["duration_delta"].dropna().abs().mean() if not BC_TP.empty else np.nan,
-      "mean_start_delta": BC_TP["start_delta"].dropna().abs().mean() if not BC_TP.empty else np.nan,
-      "mean_end_delta": BC_TP["end_delta"].dropna().abs().mean() if not BC_TP.empty else np.nan,
-    }
-
-    # Turn error metrics
-    T_FP = err_df[(err_df["turn_type"] == "T") & (err_df["detected"].isna())]
-    T_TP = err_df[(err_df["turn_type"] == "T") & (err_df["detected"] == True)]
-    T_FN = err_df[(err_df["turn_type"] == "T") & (err_df["detected"] == False)]
-
-    T_metrics = {
-        "precision": len(T_TP) / (len(T_TP) + len(T_FP)) if (len(T_TP) + len(T_FP)) > 0 else 0.0,
-        "recall": len(T_TP) / (len(T_TP) + len(T_FN)) if (len(T_TP) + len(T_FN)) > 0 else 0.0,
-        "mean_duration_delta": T_TP["duration_delta"].dropna().abs().mean() if not T_TP.empty else np.nan,
-        "mean_start_delta": T_TP["start_delta"].dropna().abs().mean() if not T_TP.empty else np.nan,
-        "mean_end_delta": T_TP["end_delta"].dropna().abs().mean() if not T_TP.empty else np.nan,
-    }
-
-    # Floor transfer error metrics
-    FTO_FP = err_df[(err_df["turn_type"] == "FTO") & (err_df["detected"].isna())]
-    FTO_TP = err_df[(err_df["turn_type"] == "FTO") & (err_df["detected"] == True)]
-    FTO_FN = err_df[(err_df["turn_type"] == "FTO") & (err_df["detected"] == False)]
-
-    FTO_metrics = {
-        "precision": len(FTO_TP) / (len(FTO_TP) + len(FTO_FP)) if (len(FTO_TP) + len(FTO_FP)) > 0 else 0.0,
-        "recall": len(FTO_TP) / (len(FTO_TP) + len(FTO_FN)) if (len(FTO_TP) + len(FTO_FN)) > 0 else 0.0,
-        "mean_duration_delta": FTO_TP["duration_delta"].dropna().abs().mean() if not FTO_TP.empty else np.nan,
-        "mean_start_delta": FTO_TP["start_delta"].dropna().abs().mean() if not FTO_TP.empty else np.nan,
-        "mean_end_delta": FTO_TP["end_delta"].dropna().abs().mean() if not FTO_TP.empty else np.nan,
-    }
-
-    err = {
-        "BC": BC_metrics,
-        "T": T_metrics,
-        "FTO": FTO_metrics,
-    }
-
-    return err, err_df
+    return err_df
 
 
 
