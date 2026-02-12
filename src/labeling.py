@@ -66,7 +66,7 @@ def classify_transcriptions(df: pd.DataFrame, threshold: float = 1.5) -> pd.Data
 
 
 def merge_turns_with_context(
-    df: pd.DataFrame, max_backchannel_dur: float = 1.0, max_gap_sec: float = 2.0
+    df: pd.DataFrame, max_backchannel_dur: float = 1.0, max_gap_sec: float = 3.0
 ) -> pd.DataFrame:
     """
     Merge same-speaker turns separated only by short backchannels.
@@ -116,13 +116,21 @@ def merge_turns_with_context(
         while j < len(df):
             next_segment = df.iloc[j]
 
+            # Skip segments that are fully overlapped (end before/at current turn ends)
+            if next_segment["end_sec"] <= current["end_sec"]:
+                j += 1
+                continue
+
             if next_segment["type"] == "turn" and next_segment["speaker"] == speaker:
                 # Check if can merge
                 gap = next_segment["start_sec"] - current["end_sec"]
                 if gap > max_gap_sec:
                     break
 
+                # Only check segments that extend beyond current turn
+                #  (not fully overlapped)
                 between = df.iloc[i + 1 : j]
+                between = between[between["end_sec"] > current["end_sec"]]
                 can_merge = len(between) == 0 or all(
                     (between["type"] == "backchannel")
                     & (
@@ -155,7 +163,7 @@ def merge_turns_with_context(
                 else:
                     break
             else:
-                # Different speaker turn
+                # Different speaker turn (not overlapping)
                 break
 
         # Append the merged turn

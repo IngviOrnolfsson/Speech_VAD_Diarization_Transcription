@@ -89,10 +89,10 @@ def process_conversation(
     long_merge_enabled: bool = True,
     merge_max_dur: float = 60.0,
     bridge_short_opponent: bool = True,
-    transcription_model_name: str = "openai/whisper-large-v3",
+    transcription_model_name: str = "large-v3",
     whisper_device: str = "auto",
     whisper_language: str = "da",
-    whisper_transformers_batch_size: int = 100,
+    whisper_model_batch_size: int = 100,
     entropy_threshold: float = 1.5,
     max_backchannel_dur: float = 1.0,
     max_gap_sec: float = 3.0,
@@ -127,7 +127,7 @@ def process_conversation(
         transcription_model_name: Name of the Transcription model to use.
         whisper_device: Device to run Whisper on ('auto', 'cpu', 'cuda').
         whisper_language: Language code for transcription.
-        whisper_transformers_batch_size: Batch size for Whisper transcription.
+        whisper_model_batch_size: Batch size for Whisper transcription.
         entropy_threshold: Threshold for classifying backchannels vs turns.
         max_backchannel_dur: Maximum duration for backchannel merging.
         max_gap_sec: Maximum gap for merging with context.
@@ -325,7 +325,7 @@ def process_conversation(
             transcription_model_name=transcription_model_name,
             device=whisper_device,
             language=whisper_language,
-            transformers_batch_size=whisper_transformers_batch_size,
+            model_batch_size=whisper_model_batch_size,
         )
         print("✓ Model loaded")
 
