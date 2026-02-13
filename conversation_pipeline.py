@@ -45,7 +45,7 @@ ENABLE_CARBON_TRACKING = False  # Set to True to enable energy/emissions trackin
 # ============================================================================
 
 
-def example_dyad(audio_dir,conv_id) -> dict:
+def example_dyad() -> dict:
     """
     Dyad example: Two speakers with separate audio files.
 
@@ -54,8 +54,8 @@ def example_dyad(audio_dir,conv_id) -> dict:
     """
     return {
         "speakers_audio": {
-            "P1": audio_dir + "/" + conv_id + "_ch1.wav",
-            "P2": audio_dir + "/" + conv_id + "_ch2.wav",
+            "P1": "path/to/speaker1.wav",
+            "P2": "path/to/speaker2.wav",
         },
         "output_dir": "outputs/dyad",
         "vad_type": "rvad",
@@ -132,7 +132,6 @@ def example_cpu_only() -> dict:
         "batch_size": 15.0,  # Smaller batches for CPU
         "whisper_transformers_batch_size": 16,
     }
-
 
 def example_full_options() -> dict:
     """
@@ -225,12 +224,12 @@ def create_carbon_tracker() -> CarbonTracker | None:
 # ============================================================================
 
 
-def main(audio_dir, label_dir, conv_id, annotator_id) -> None:
+def main() -> None:
     """Run the pipeline with the selected example configuration."""
     # -------------------------------------------------------------------------
     # SELECT YOUR EXAMPLE HERE
     # -------------------------------------------------------------------------
-    config = example_dyad(audio_dir, conv_id)
+    config = example_dyad()
     # config = example_triad()
     # config = example_diarization()
     # config = example_custom_whisper()
@@ -260,9 +259,9 @@ def main(audio_dir, label_dir, conv_id, annotator_id) -> None:
     # -------------------------------------------------------------------------
     # COMPARE TO MANUAL ANNOTATIONS IF AVAILABLE
     # -------------------------------------------------------------------------
-    if len(label_dir) > 0:
-        compute_and_print_errors(label_dir, conv_id, annotator_id=annotator_id)
+    # if len(label_dir) > 0:
+    #     compute_and_print_errors(label_dir, conv_id, annotator_id=annotator_id)
 
 
 if __name__ == "__main__":
-    main(audio_dir="demo/audio", label_dir="demo/annotations", conv_id="F1F2_quiet_food", annotator_id="_rinor")
+    main()
