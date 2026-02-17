@@ -153,8 +153,8 @@ def merge_turns_with_context(
                 between = between[between["end_sec"] > current["end_sec"]]
                 can_merge = len(between) == 0 or all(
                     (
-                        between["type"] == "backchannel"
-                        or between["type"] == "overlapped_turn"
+                        (between["type"] == "backchannel")
+                        | (between["type"] == "overlapped_turn")
                     )
                     & (
                         (between["end_sec"] - between["start_sec"])
