@@ -59,7 +59,7 @@ def compute_turn_errors(
             - start_sec: Turn start time (seconds)
             - end_sec: Turn end time (seconds)
             - duration_sec: Turn duration (seconds)
-            - turn_type: Turn type identifier
+            - type: Turn type identifier
         df_est: Estimated turns DataFrame with same columns as df_ref.
         min_overlap_ratio: Minimum overlap ratio required for matching turns.
 
@@ -83,9 +83,9 @@ def compute_turn_errors(
             speaker_ref = "".join(sorted(str(df_ref.iloc[i_ref]["speaker"])))
             speaker_est = "".join(sorted(str(df_est.iloc[i_est]["speaker"])))
 
-            # Compute overlap ratio only if turn_type and speaker match
+            # Compute overlap ratio only if type and speaker match
             if (
-                df_ref.iloc[i_ref]["turn_type"] == df_est.iloc[i_est]["turn_type"]
+                df_ref.iloc[i_ref]["type"] == df_est.iloc[i_est]["type"]
                 and speaker_ref == speaker_est
             ):
                 overlap_matrix[i_est, i_ref] = compute_overlap_ratio(
@@ -206,7 +206,7 @@ def compute_turn_errors(
                     "start_sec": df_est.iloc[i_est]["start_sec"],
                     "end_sec": df_est.iloc[i_est]["end_sec"],
                     "duration_sec": df_est.iloc[i_est]["duration_sec"],
-                    "turn_type": df_est.iloc[i_est]["turn_type"],
+                    "type": df_est.iloc[i_est]["type"],
                     "detected": np.nan,
                     "duration_delta": np.nan,
                     "start_delta": np.nan,
@@ -237,7 +237,7 @@ def tabulate_floor_transfers(
             - start_sec: Turn start time (seconds)
             - end_sec: Turn end time (seconds)
             - duration_sec: Turn duration (seconds)
-            - turn_type: Turn type identifier ("T" for turns)
+            - type: Turn type identifier ("turn" for turns)
 
     Returns:
         DataFrame with floor transfer events containing:
@@ -245,14 +245,14 @@ def tabulate_floor_transfers(
             - start_sec: Floor transfer start time (end of previous turn)
             - end_sec: Floor transfer end time (start of next turn)
             - duration_sec: Floor transfer duration
-            - turn_type: "FTO" (floor transfer offset)
+            - type: "FTO" (floor transfer offset)
     """
     # Filter for turns only
-    turns = df_turns[df_turns["turn_type"] == "T"].copy()
+    turns = df_turns[df_turns["type"] == "turn"].copy()
     turns = turns.sort_values(by="start_sec").reset_index(drop=True)
 
     n_turns = len(turns)
-    floor_transfers = []
+    floor_transfers = pd.DataFrame(columns=["speaker", "start_sec", "end_sec", "duration_sec", "type"])
 
     for i_turn in range(n_turns - 1):
         speaker_current = turns.iloc[i_turn]["speaker"]
@@ -271,15 +271,16 @@ def tabulate_floor_transfers(
             t_end = turns.iloc[i_turn + 1]["start_sec"]
             duration = t_end - t_start
 
-            floor_transfers.append(
-                {
+            floor_transfers = pd.concat([
+                floor_transfers,
+                pd.DataFrame([{
                     "speaker": speakers,
                     "start_sec": t_start,
                     "end_sec": t_end,
                     "duration_sec": duration,
-                    "turn_type": "FTO",
+                    "type": "FTO",
                 }
-            )
+            ])], ignore_index=True)
 
     df_fto = pd.DataFrame(floor_transfers)
 
@@ -293,20 +294,20 @@ def print_error_summary(err: dict) -> None:
     Args:
         err: Dictionary containing error metrics for each turn type.
     """
-    for turn_type, metrics in err.items():
+    for type, metrics in err.items():
         print("-" * 60)
-        print(f"{turn_type} Precision: {metrics['precision']:.2f}")
-        print(f"{turn_type} Recall: {metrics['recall']:.2f}")
+        print(f"{type} Precision: {metrics['precision']:.2f}")
+        print(f"{type} Recall: {metrics['recall']:.2f}")
         print(
-            f"{turn_type} Mean Duration Delta (abs): "
+            f"{type} Mean Duration Delta (abs): "
             f"{metrics['mean_duration_delta']:.2f} seconds"
         )
         print(
-            f"{turn_type} Mean Start Delta (abs): "
+            f"{type} Mean Start Delta (abs): "
             f"{metrics['mean_start_delta']:.2f} seconds"
         )
         print(
-            f"{turn_type} Mean End Delta (abs): "
+            f"{type} Mean End Delta (abs): "
             f"{metrics['mean_end_delta']:.2f} seconds"
         )
 
@@ -328,18 +329,30 @@ def compute_all_errors(
         Tuple of (metrics_dict, errors_dataframe) where metrics_dict contains
         precision, recall, and mean timing deltas for each turn type.
     """
-    turn_errors_df = compute_turn_errors(df_ref, df_est, min_overlap_ratio)
+    # turn_errors_df = compute_turn_errors(df_ref, df_est, min_overlap_ratio)
+
+    # df_fto_ref = tabulate_floor_transfers(df_ref)
+    # df_fto_est = tabulate_floor_transfers(df_est)
+    # print(df_ref)
+    # print(df_fto_ref)
+    # fto_errors_df = compute_turn_errors(df_fto_ref, df_fto_est, min_overlap_ratio)
+
+    # turn_errors_df = compute_turn_errors(df_ref, df_est, min_overlap_ratio)
 
     df_fto_ref = tabulate_floor_transfers(df_ref)
     df_fto_est = tabulate_floor_transfers(df_est)
-    fto_errors_df = compute_turn_errors(df_fto_ref, df_fto_est, min_overlap_ratio)
 
-    err_df = pd.concat([turn_errors_df, fto_errors_df], ignore_index=True)
+    df_ref_cat = pd.concat([df_ref, df_fto_ref], ignore_index=True)
+    df_est_cat = pd.concat([df_est, df_fto_est], ignore_index=True)
+                           
+    err_df = compute_turn_errors(df_ref_cat, df_est_cat, min_overlap_ratio)
+
+    # err_df = pd.concat([turn_errors_df, fto_errors_df], ignore_index=True)
 
     # Compute summary metrics for each turn type
     err: dict = {}
-    for turn_type in err_df["turn_type"].unique():
-        type_df = err_df[err_df["turn_type"] == turn_type]
+    for type in err_df["type"].unique():
+        type_df = err_df[err_df["type"] == type]
 
         # True positives: detected=True
         tp = (type_df["detected"] == 1).sum()
@@ -362,7 +375,7 @@ def compute_all_errors(
             detected_df["end_delta"].abs().mean() if len(detected_df) > 0 else 0.0
         )
 
-        err[turn_type] = {
+        err[type] = {
             "precision": precision,
             "recall": recall,
             "mean_duration_delta": mean_duration_delta,
@@ -372,70 +385,69 @@ def compute_all_errors(
 
     return err, err_df
 
+# def compute_and_print_errors(
+#   label_dir: str,
+#   conv_id: str,
+#   annotator_id: str = "",
+#   min_overlap_ratio: float = 0.1,
+#   print_summary: bool = True,
+# ) -> dict:
+#     """
+#     Compute turn errors and optionally print a summary.
 
-def compute_and_print_errors(
-    label_dir: str,
-    conv_id: str,
-    annotator_id: str = "",
-    min_overlap_ratio: float = 0.1,
-    print_summary: bool = True,
-) -> dict:
-    """
-    Compute turn errors and optionally print a summary.
+#     Args:
+#         label_dir: Directory containing ground truth label files.
+#         conv_id: Conversation identifier to select the appropriate label file.
+#         annotator_id: Identifier for the annotator of the labels.
+#         min_overlap_ratio: Minimum overlap ratio for matching turns.
+#         print_summary: Whether to print the error summary.
+#     Returns:
+#         Dictionary of error metrics for each turn type.
+#     """
 
-    Args:
-        label_dir: Directory containing ground truth label files.
-        conv_id: Conversation identifier to select the appropriate label file.
-        annotator_id: Identifier for the annotator of the labels.
-        min_overlap_ratio: Minimum overlap ratio for matching turns.
-        print_summary: Whether to print the error summary.
-    Returns:
-        Dictionary of error metrics for each turn type.
-    """
+#     # Load manual labels
+#     df_ref = pd.read_csv(
+#         f"{label_dir}/{conv_id}{annotator_id}.txt",
+#         sep="\t",
+#         header=None,
+#         names=["speaker", "foo", "start_sec", "end_sec", "duration_sec", "type"],
+#     )
+#     # Replace common label variations and drop unused columns
+#     df_ref = df_ref.replace(
+#         {
+#             "speaker": {"Talker1": "P1","p1":"P1", "Talker2": "P2","p2":"P2"},
+#             "type": {"t": "T", "b": "B"},
+#         }
+#     )
+#     df_ref = df_ref.drop(columns=["foo"])
 
-    # Load manual labels
-    df_ref = pd.read_csv(
-        f"{label_dir}/{conv_id}{annotator_id}.txt",
-        sep="\t",
-        header=None,
-        names=["speaker", "foo", "start_sec", "end_sec", "duration_sec", "turn_type"],
-    )
-    # Replace common label variations and drop unused columns
-    df_ref = df_ref.replace(
-        {
-            "speaker": {"Talker1": "P1", "p1": "P1", "Talker2": "P2", "p2": "P2"},
-            "turn_type": {"t": "T", "b": "B"},
-        }
-    )
-    df_ref = df_ref.drop(columns=["foo"])
+#     df_est = pd.read_csv("outputs/cpu/final_labels.txt", sep="\t")
 
-    df_est = pd.read_csv("outputs/dyad/merged_turns.txt", sep="\t")
+#     err, err_df = compute_all_errors(df_ref, df_est, min_overlap_ratio)
 
-    err, err_df = compute_all_errors(df_ref, df_est, min_overlap_ratio)
+#     if print_summary:
+#         print_error_summary(err)
 
-    if print_summary:
-        print_error_summary(err)
-
-    return err
+#     return err
 
 
 if __name__ == "__main__":
     # Example usage
     df_ref = pd.read_csv(
-        "demo/annotations/EXP29_T2_labels_rinor.txt",
+        "demo/annotations/F1F2_quiet_food_1m_01_labels_manual_rinor.txt",
         sep="\t",
         header=None,
-        names=["speaker", "foo", "start_sec", "end_sec", "duration_sec", "turn_type"],
+        names=["speaker", "foo", "start_sec", "end_sec", "duration_sec", "type"],
     )
     df_ref = df_ref.replace(
         {
-            "speaker": {"Talker1": "P1", "p1": "P1", "Talker2": "P2", "p2": "P2"},
-            "turn_type": {"t": "T", "b": "B"},
+            "speaker": {"Talker1": "P1","p1":"P1", "Talker2": "P2","p2":"P2"},
+            "type": {"T": "turn", "B": "backchannel"},
         }
     )
     df_ref = df_ref.drop(columns=["foo"])
 
-    df_est = pd.read_csv("outputs/dyad/merged_turns.txt", sep="\t")
+    df_est = pd.read_csv("outputs/cpu/final_labels.txt", sep="\t")
 
     err, err_df = compute_all_errors(df_ref, df_est, min_overlap_ratio=0.1)
 
