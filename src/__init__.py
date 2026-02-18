@@ -3,7 +3,6 @@
 __all__ = [
     "__version__",
     "process_conversation",
-    "compute_and_print_errors",
     "load_whisper_model",
     "transcribe_segments",
     "compute_all_errors"
