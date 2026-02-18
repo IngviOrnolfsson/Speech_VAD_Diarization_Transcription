@@ -10,6 +10,5 @@ __all__ = [
 
 __version__ = "0.1.0"
 
-from .compute_turn_errors import compute_and_print_errors
 from .conversation import process_conversation
 from .transcription import load_whisper_model, transcribe_segments
