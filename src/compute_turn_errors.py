@@ -424,9 +424,8 @@ def compute_all_errors(
 
     return err, err_df
 
-def postprocess_turn_df(
-    df: pd.DataFrame,
-) -> pd.DataFrame:
+
+def replace_labels(df: pd.DataFrame) -> pd.DataFrame:
     
     # Replace common value variations
     df =df.replace(
@@ -443,15 +442,40 @@ def postprocess_turn_df(
         }
     )
 
-    # Treat backchannels as turns if they're not embedded in an interlocutor turn
+def find_embedded_turns(df: pd.DataFrame,t_start,t_end,mask = None) -> bool:
+    # Find turns that are fully embedded within the given time interval and match the mask
+    if mask is None:
+        mask = pd.Series([True] * len(df))
+
+    idx_embedded = (df["start_sec"] >= t_start) & (df["end_sec"] <= t_end) & mask
+  
+    return idx_embedded
+    
+
+
+def postprocess_turn_df(
+    df: pd.DataFrame,
+    max_iter = 20,
+    rec_iter = 0,
+) -> pd.DataFrame:
+    
+    if rec_iter == 0:
+        print("-"*60)
+    print(f">>> Starting postprocessing - recursion iteration {rec_iter}")
+
+    df = replace_labels(df)
+    
     speakers = ["P1", "P2"]
     for ip in (0, 1):
         p_bc = speakers[ip]
         p_int = speakers[1 - ip]  # Get the other speaker
 
+        mask_speaker = df["speaker"] == p_bc
         mask_backchannel = (df["type"] == "backchannel") & (df["speaker"] == p_bc)
-        mask_interlocutor_turn = (df["type"] == "turn") & (df["speaker"] == p_int)
+        mask_turn = (df["type"] == "turn") & (df["speaker"] == p_bc)
+        mask_interlocutor_turn = (df["type"].isin({"turn", "backchannel"})) & (df["speaker"] == p_int)
 
+        # Treat backchannels as turns if they're not embedded in an interlocutor turn
         for idx_bc in df[mask_backchannel].index:
             t_start_bc = df.loc[idx_bc, "start_sec"]
             t_end_bc = df.loc[idx_bc, "end_sec"]
@@ -463,19 +487,52 @@ def postprocess_turn_df(
                 & (df["end_sec"] >= t_end_bc)
             ):
                 df.loc[idx_bc, "type"] = "turn"
+        
+        # Treat turns as backchannels if they're fully embedded in an interlocutor turn
+        for idx_turn in df[mask_turn].index:
+            t_start_turn = df.loc[idx_turn, "start_sec"]
+            t_end_turn = df.loc[idx_turn, "end_sec"]
+
+            # Check if turn is fully contained within any interlocutor turn
+            if np.any(
+                (mask_interlocutor_turn)
+                & (df["start_sec"] <= t_start_turn)
+                & (df["end_sec"] >= t_end_turn)
+            ):
+                df.loc[idx_turn, "type"] = "backchannel"
+
+        # Mark entry if any overlap with another entry by the same speaker
+        if rec_iter == 0:
+          for i in df[mask_speaker].index:
+              t_start_i = df.loc[i, "start_sec"]
+              t_end_i = df.loc[i, "end_sec"]
+              for j in df[mask_speaker].index:
+                  if j >= i:
+                      continue  # Avoid redundant checks and self-comparison
+                  t_start_j = df.loc[j, "start_sec"]
+                  t_end_j = df.loc[j, "end_sec"]
+
+                  overlap_ratio = compute_overlap_ratio((t_start_i, t_end_i), (t_start_j, t_end_j))
+                  if overlap_ratio > 0:  # If overlap is more than 0, append self-overlap index to OL column
+                      df.loc[i, "OL"] = df.loc[i].get("OL", "") + f"{j}_"
+                      df.loc[j, "OL"] = df.loc[j].get("OL", "") + f"{i}_"
+                  else:
+                      df.loc[i, "OL"] = df.loc[i].get("OL", "")  # Keep existing OL value if no overlap
+                      df.loc[j, "OL"] = df.loc[j].get("OL", "")  # Keep existing OL value if no overlap
+
 
     # Combine consecutive turns of the same speaker if no interlocutor turn between them
     for speaker in speakers:
-        print(f"Processing speaker {speaker} for turn combination...")
+        # print(f"Processing speaker {speaker} for turn combination...")
         mask_speaker_turn = (df["type"] == "turn") & (df["speaker"] == speaker)
-        print(f"Found {mask_speaker_turn.sum()} turns for speaker {speaker} before combination.")
+        # print(f"Found {mask_speaker_turn.sum()} turns for speaker {speaker} before combination.")
         df_speaker_turns = df[mask_speaker_turn].sort_values(by="start_sec")
         
 
         for i in range(len(df_speaker_turns) - 1):
-            print(f"Checking turns {i} and {i+1} for speaker {speaker}...")
+            # print(f"Checking turns {i} and {i+1} for speaker {speaker}...")
             
-            print("-----------------")
+            # print("-----------------")
             current_turn = df_speaker_turns.iloc[i]
             next_turn = df_speaker_turns.iloc[i + 1]
 
@@ -489,64 +546,113 @@ def postprocess_turn_df(
                 t_end_inter = df.loc[idx_inter, "end_sec"]
 
                 if t_start_inter <= current_turn["end_sec"] and t_end_inter >= current_turn["end_sec"]:
-                    print(f"Interlocutor turn starting at {t_start_inter} crosses current turn end time. Not merging.")
+                    # print(f"Interlocutor turn starting at {t_start_inter} crosses current turn end time. Not merging.")
                     merge_turns = False
                     break
                 
                 elif t_start_inter <= next_turn["start_sec"] and t_end_inter >= next_turn["start_sec"]:
-                    print(f"Interlocutor turn starting at {t_start_inter} crosses next turn start time. Not merging.")
+                    # print(f"Interlocutor turn starting at {t_start_inter} crosses next turn start time. Not merging.")
                     merge_turns = False
                     break
                 
                 elif t_start_inter >= current_turn["end_sec"] and t_end_inter <= next_turn["start_sec"]:
-                    print(f"Interlocutor turn starting at {t_start_inter} is fully contained between current and next turn. Not merging.")
+                    # print(f"Interlocutor turn starting at {t_start_inter} is fully contained between current and next turn. Not merging.")
                     merge_turns = False
                     break
-                else:
-                    print(f"Interlocutor turn starting at {t_start_inter} does not cross current or next turn. Checking next interlocutor turn.")
+                # else:
+                    # print(f"Interlocutor turn starting at {t_start_inter} does not cross current or next turn. Checking next interlocutor turn.")
                    
-            print(f"After checking interlocutor turns, merge_turns={merge_turns} for turns {i} and {i+1} of speaker {speaker}.")
-            print("---")
+            # print(f"After checking interlocutor turns, merge_turns={merge_turns} for turns {i} and {i+1} of speaker {speaker}.")
+            # print("---")
 
             if merge_turns:
-                print(f"No interlocutor turn crosses current or next turn. Merging turns {i} and {i+1} for speaker {speaker}.")
+                # print(f"No interlocutor turn crosses current or next turn. Merging turns {i} and {i+1} for speaker {speaker}.")
                 # No interlocutor turn crosses start or end, so merge turns
                 df.loc[df_speaker_turns.index[i], "end_sec"] = df_speaker_turns.iloc[i + 1]["end_sec"]
                 df.loc[df_speaker_turns.index[i], "duration_sec"] = (
                     df.loc[df_speaker_turns.index[i], "end_sec"]
                     - df.loc[df_speaker_turns.index[i], "start_sec"]
                 )
+                # Merge transcript text if exists
+                if "transcript" in df.columns:
+                    df.loc[df_speaker_turns.index[i], "transcript"] = (
+                        str(df.loc[df_speaker_turns.index[i], "transcript"]) + " " + str(df_speaker_turns.iloc[i + 1].get("transcript", ""))
+                    ).strip()
+
+                df.loc[df_speaker_turns.index[i], "type"] = "turn"
                 # Mark the next turn for deletion
                 df.loc[df_speaker_turns.index[i + 1], "type"] = "delete"
+                turns_merged = turns_merged +1 if 'turns_merged' in locals() else 1
             
     df = df[df["type"] != "delete"].sort_values(by="start_sec").reset_index(drop=True)
+    df_turns = df[df["type"] == "turn"].sort_values(by="start_sec")
+    
+    recur = False
+    for i in range(len(df_turns) - 1):  # Check for consecutive turns by the same speaker
+        idx_current = df_turns.index[i]
+        idx_next = df_turns.index[i + 1]
+        current_turn = df.iloc[idx_current]
+        next_turn = df.iloc[idx_next]
+        if current_turn["speaker"] == next_turn["speaker"]:
+            print(f"Consecutive turns by speaker {current_turn['speaker']} found at index {idx_current} and {idx_next}. Running post-processing again to ensure all consecutive turns are merged.")
+            recur = True
+            # print(f"Recursion iteration {rec_iter+1}")
+            # return postprocess_turn_df(df, rec_iter=rec_iter+1)
+            break
+    print(f"Post-processing iteration completed with {turns_merged if 'turns_merged' in locals() else 0} turns merged after {rec_iter} iterations.\n")
+    if rec_iter < max_iter:
+      if recur:
+        return postprocess_turn_df(df, max_iter=max_iter, rec_iter=rec_iter+1)
+      else:
+          print("No consecutive turns found. Post-processing complete.")
+          print("-"*60)
+    else:        
+        print(f"Maximum recursion iterations ({max_iter}) reached. Post-processing terminated.")
+        print("-"*60)
 
-    df_turns = df[df["type"] == "turn"].sort_values(by="start_sec").reset_index(drop=True)
-    for i in range(len(df_turns) - 1):
-        current_turn = df_turns.iloc[i]
-        next_turn = df_turns.iloc[i + 1]
-        assert current_turn["speaker"] != next_turn["speaker"], (
-            f"Consecutive turns by speaker {current_turn['speaker']} found at index {i} and {i+1}."
-        )
     return df
 
 
 
 if __name__ == "__main__":
     # Example usage
-    df_ref = pd.read_csv(
-        "demo/annotations/F1F2_quiet_food_1m_01_labels_manual_rinor.txt",
+    # df_ref = pd.read_csv(
+    #     "demo/annotations/F1F2_quiet_food_1m_01_labels_manual_rinor.txt",
+    #     sep="\t",
+    #     header=None,
+    #     names=["speaker", "foo", "start_sec", "end_sec", "duration_sec", "type"],
+    # ).drop(columns=["foo"])
+
+    # df_est = pd.read_csv("outputs/cpu/final_labels.txt", sep="\t")
+
+    # df_ref_proc = postprocess_turn_df(df_ref)
+    # df_est_proc = postprocess_turn_df(df_est)
+
+    # err, err_df = compute_all_errors(df_ref_proc, df_est_proc, min_overlap_ratio=0.1)
+
+    # print_error_summary(err)
+    # print(err_df)
+
+    df = pd.read_csv(
+        "demo/annotations/final_labels.txt",
         sep="\t",
-        header=None,
-        names=["speaker", "foo", "start_sec", "end_sec", "duration_sec", "type"],
-    ).drop(columns=["foo"])
+    )
 
-    df_est = pd.read_csv("outputs/cpu/final_labels.txt", sep="\t")
+    # Add OL column if not exists
+    if "OL" not in df.columns:
+        df["OL"] = ""
 
-    df_ref_proc = postprocess_turn_df(df_ref)
-    df_est_proc = postprocess_turn_df(df_est)
+    df_proc = postprocess_turn_df(df, max_iter = 20)
 
-    err, err_df = compute_all_errors(df_ref_proc, df_est_proc, min_overlap_ratio=0.1)
+    print("Differences between end_sec-start_sec and duration_sec:")
+    diff = df["end_sec"] - df["start_sec"] - df["duration_sec"]
+    print(diff[diff > 1e-3])
+    print("-"*60)
 
-    print_error_summary(err)
-    print(err_df)
+    print("Self-overlapping entries:")
+    df_self_overlap = df_proc[df_proc["OL"].str.contains("_")]
+    print(df_self_overlap)
+    print("-"*60)
+
+    df_proc.to_csv("demo/annotations/final_labels_proc.txt", sep="\t", index=False)
+  
